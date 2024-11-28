@@ -162,7 +162,14 @@ std::vector<std::vector<float>> postprocess(const float* output, int batchSize, 
 }
 
 // YOLOv11 inference
-void yolov11BatchInference(std::vector<cv::Mat>& frames, nvinfer1::IExecutionContext* context, const nvinfer1::ICudaEngine* engine, void* buffers[], cudaStream_t stream, float confidenceThreshold) {
+std::vector<std::vector<std::vector<float>>> yolov11BatchInference(
+    const std::vector<cv::Mat>& frames, 
+    nvinfer1::IExecutionContext* context, 
+    const nvinfer1::ICudaEngine* engine, 
+    void* buffers[], 
+    cudaStream_t stream, 
+    float confidenceThreshold
+) {
     const int batchSize = frames.size();
     const int inputChannels = 3;
     const int inputHeight = 640;
@@ -170,25 +177,57 @@ void yolov11BatchInference(std::vector<cv::Mat>& frames, nvinfer1::IExecutionCon
     const int outputClasses = 80; // Number of classes
     const int outputBoxes = 8400; // Total number of anchors
 
+    // Preprocess frames into batch
     preprocess(frames, static_cast<float*>(buffers[0]), batchSize, inputChannels, inputHeight, inputWidth, stream);
 
+    // Execute inference
     context->executeV2(buffers);
 
+    // Copy inference results back to host
     const int outputSize = batchSize * (outputClasses + 4) * outputBoxes;
     std::vector<float> hostOutput(outputSize);
     CHECK_CUDA(cudaMemcpy(hostOutput.data(), buffers[1], outputSize * sizeof(float), cudaMemcpyDeviceToHost));
+    cudaStreamSynchronize(stream);
 
-    auto detections = postprocess(hostOutput.data(), batchSize, outputClasses, outputBoxes, confidenceThreshold, 0.45);
-
-    for (const auto& det : detections) {
-        std::cout << "BBox: [" << det[0] << ", " << det[1] << ", " << det[2] << ", " << det[3]
-                  << "], Confidence: " << det[4] << ", Class: " << det[5] << std::endl;
+    // Postprocess detections for each frame in the batch
+    std::vector<std::vector<std::vector<float>>> allDetections(batchSize);
+    for (int i = 0; i < batchSize; ++i) {
+        allDetections[i] = postprocess(
+            hostOutput.data() + i * (outputClasses + 4) * outputBoxes, 
+            1, 
+            outputClasses, 
+            outputBoxes, 
+            confidenceThreshold, 
+            0.45
+        );
     }
+
+    return allDetections;
 }
 
-bool endsWith(const std::string& str, const std::string& suffix) {
-    if (str.size() < suffix.size()) return false;
-    return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+void drawDetections(cv::Mat& image, const std::vector<std::vector<float>>& detections, const std::vector<std::string>& classLabels) {
+    for (const auto& det : detections) {
+        int x = static_cast<int>(det[0]);
+        int y = static_cast<int>(det[1]);
+        int width = static_cast<int>(det[2]);
+        int height = static_cast<int>(det[3]);
+        float confidence = det[4];
+        int classId = static_cast<int>(det[5]);
+
+        // Draw the bounding box
+        cv::rectangle(image, cv::Rect(x, y, width, height), cv::Scalar(0, 255, 0), 2);
+
+        // Prepare label text
+        std::string label = classLabels[classId] + " (" + std::to_string(static_cast<int>(confidence * 100)) + "%)";
+
+        // Draw the label background
+        int baseline = 0;
+        cv::Size labelSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
+        cv::rectangle(image, cv::Point(x, y - labelSize.height - 10), cv::Point(x + labelSize.width, y), cv::Scalar(0, 255, 0), cv::FILLED);
+
+        // Put the label text
+        cv::putText(image, label, cv::Point(x, y - 5), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -198,11 +237,14 @@ int main(int argc, char** argv) {
     }
 
     std::string inputPath = argv[1];
-    bool isVideo = endsWith(inputPath, ".mp4");
+    bool isVideo = inputPath.find(".mp4") != std::string::npos;
 
     std::string enginePath = "../model-weigth/yolo11s.engine";
     auto engine = loadEngine(enginePath);
-    if (!engine) return -1;
+    if (!engine) {
+        std::cerr << "Error loading TensorRT engine!" << std::endl;
+        return -1;
+    }
 
     auto context = engine->createExecutionContext();
     if (!context) {
@@ -220,7 +262,21 @@ int main(int argc, char** argv) {
     cudaStream_t stream;
     CHECK_CUDA(cudaStreamCreate(&stream));
 
-    float confidenceThreshold = 0.9;
+    float confidenceThreshold = 0.90;
+
+    // Example class labels (COCO dataset)
+    std::vector<std::string> classLabels = {"person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
+                                            "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter",
+                                            "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear",
+                                            "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+                                            "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+                                            "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+                                            "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+                                            "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+                                            "potted plant", "bed", "dining table", "toilet", "TV", "laptop", "mouse",
+                                            "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+                                            "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
+                                            "toothbrush"};
 
     if (isVideo) {
         cv::VideoCapture cap(inputPath);
@@ -235,13 +291,13 @@ int main(int argc, char** argv) {
             batchFrames.push_back(frame.clone());
 
             if (batchFrames.size() == batchSize) {
-                yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
+                auto allDetections = yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
                 batchFrames.clear();
             }
         }
 
         if (!batchFrames.empty()) {
-            yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
+            auto allDetections = yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
         }
 
         cap.release();
@@ -254,7 +310,18 @@ int main(int argc, char** argv) {
         }
         images.push_back(img);
 
-        yolov11BatchInference(images, context, engine.get(), buffers, stream, confidenceThreshold);
+        // Run inference and get detections
+        auto allDetections = yolov11BatchInference(images, context, engine.get(), buffers, stream, confidenceThreshold);
+
+        // Draw detections on the image
+        if (!allDetections.empty()) {
+            drawDetections(img, allDetections[0], classLabels);
+        }
+
+        // Save the image with detections
+        std::string outputPath = "out_" + inputPath.substr(inputPath.find_last_of("/") + 1);
+        cv::imwrite(outputPath, img);
+        std::cout << "Saved output to " << outputPath << std::endl;
     }
 
     CHECK_CUDA(cudaStreamDestroy(stream));
