@@ -60,6 +60,16 @@ std::unique_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& enginePath)
     return std::unique_ptr<nvinfer1::ICudaEngine>(runtime->deserializeCudaEngine(engineData.data(), fileSize));
 }
 
+// Helper function to find tensor index
+int findTensorIndex(const nvinfer1::ICudaEngine* engine, const std::string& name) {
+    for (int i = 0; i < engine->getNbIOTensors(); ++i) {
+        if (name == engine->getIOTensorName(i)) {
+            return i;
+        }
+    }
+    throw std::runtime_error("Tensor name not found: " + name);
+}
+
 // Post-processing function to parse YOLOv11 output
 void parseBatchDetections(float* output, int batchSize, int outputSizePerFrame, float confidenceThreshold) {
     std::cout << "Batch Detections:" << std::endl;
@@ -90,8 +100,6 @@ void parseBatchDetections(float* output, int batchSize, int outputSizePerFrame, 
 // YOLOv11 inference function for batch
 void yolov11BatchInference(std::vector<cv::Mat>& frames, nvinfer1::IExecutionContext* context, const nvinfer1::ICudaEngine* engine, void* buffers[], cudaStream_t stream, float confidenceThreshold) {
     const int batchSize = frames.size();
-    const int inputIndex = context->getEngine().getBindingIndex("input");
-    const int outputIndex = context->getEngine().getBindingIndex("output");
     const int inputSizePerFrame = 640 * 640 * 3; // H x W x C
     const int outputSizePerFrame = 1000; // Adjust based on YOLOv11's output size
 
@@ -108,15 +116,15 @@ void yolov11BatchInference(std::vector<cv::Mat>& frames, nvinfer1::IExecutionCon
     }
 
     // Upload to GPU
-    CHECK_CUDA(cudaMemcpyAsync(buffers[inputIndex], batchInput.data(), batchSize * inputSizePerFrame * sizeof(float), cudaMemcpyHostToDevice, stream));
+    CHECK_CUDA(cudaMemcpyAsync(buffers[0], batchInput.data(), batchSize * inputSizePerFrame * sizeof(float), cudaMemcpyHostToDevice, stream));
 
     // Run inference
-    context->enqueueV2(buffers, stream, nullptr);
+    context->executeV2(buffers);
 
     // Retrieve results
     const int outputSize = batchSize * outputSizePerFrame;
     std::vector<float> batchOutput(outputSize);
-    CHECK_CUDA(cudaMemcpyAsync(batchOutput.data(), buffers[outputIndex], outputSize * sizeof(float), cudaMemcpyDeviceToHost, stream));
+    CHECK_CUDA(cudaMemcpyAsync(batchOutput.data(), buffers[1], outputSize * sizeof(float), cudaMemcpyDeviceToHost, stream));
     cudaStreamSynchronize(stream);
 
     // Parse and log results
