@@ -5,6 +5,9 @@
 #include <memory>
 #include <fstream>
 #include <vector>
+#include <algorithm>
+#include <numeric>
+#include <filesystem>
 
 // Helper macro for CUDA error checking
 #define CHECK_CUDA(call) \
@@ -60,88 +63,143 @@ std::unique_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& enginePath)
     return std::unique_ptr<nvinfer1::ICudaEngine>(runtime->deserializeCudaEngine(engineData.data(), fileSize));
 }
 
-// Helper function to find tensor index
-int findTensorIndex(const nvinfer1::ICudaEngine* engine, const std::string& name) {
-    for (int i = 0; i < engine->getNbIOTensors(); ++i) {
-        if (name == engine->getIOTensorName(i)) {
-            return i;
-        }
-    }
-    throw std::runtime_error("Tensor name not found: " + name);
-}
+// Preprocess input images
+void preprocess(const std::vector<cv::Mat>& frames, float* gpuInput, int batchSize, int channels, int height, int width, cudaStream_t stream) {
+    std::vector<float> batchInput(batchSize * channels * height * width);
 
-// Post-processing function to parse YOLOv11 output
-void parseBatchDetections(float* output, int batchSize, int outputSizePerFrame, float confidenceThreshold) {
-    std::cout << "Batch Detections:" << std::endl;
-
-    for (int b = 0; b < batchSize; ++b) {
-        std::cout << "Frame " << b + 1 << " detections:" << std::endl;
-        for (int i = 0; i < outputSizePerFrame; i += 7) { // Adjust stride based on YOLOv11's output format
-            float confidence = output[b * outputSizePerFrame + i + 4]; // Confidence score
-            if (confidence >= confidenceThreshold) {
-                int classId = static_cast<int>(output[b * outputSizePerFrame + i + 5]); // Class ID
-                float x = output[b * outputSizePerFrame + i + 0]; // Bounding box center x
-                float y = output[b * outputSizePerFrame + i + 1]; // Bounding box center y
-                float w = output[b * outputSizePerFrame + i + 2]; // Bounding box width
-                float h = output[b * outputSizePerFrame + i + 3]; // Bounding box height
-
-                float x1 = x - w / 2.0f;
-                float y1 = y - h / 2.0f;
-
-                std::cout << "  Class ID: " << classId
-                          << ", Confidence: " << confidence
-                          << ", BBox: [" << x1 << ", " << y1
-                          << ", " << w << ", " << h << "]" << std::endl;
-            }
-        }
-    }
-}
-
-// YOLOv11 inference function for batch
-void yolov11BatchInference(std::vector<cv::Mat>& frames, nvinfer1::IExecutionContext* context, const nvinfer1::ICudaEngine* engine, void* buffers[], cudaStream_t stream, float confidenceThreshold) {
-    const int batchSize = frames.size();
-    const int inputSizePerFrame = 640 * 640 * 3; // H x W x C
-    const int outputSizePerFrame = 1000; // Adjust based on YOLOv11's output size
-
-    // Preprocess frames into batch
-    std::vector<float> batchInput(batchSize * inputSizePerFrame);
-    for (int b = 0; b < batchSize; ++b) {
-        cv::Mat resized;
-        cv::resize(frames[b], resized, cv::Size(640, 640));
-        cv::Mat floatImage;
-        resized.convertTo(floatImage, CV_32FC3, 1 / 255.0);
+    for (int i = 0; i < batchSize; ++i) {
+        cv::Mat resized, floatImage;
+        cv::resize(frames[i], resized, cv::Size(width, height));
+        resized.convertTo(floatImage, CV_32FC3, 1 / 255.0); // Normalize to [0, 1]
         cv::cvtColor(floatImage, floatImage, cv::COLOR_BGR2RGB);
 
-        std::memcpy(batchInput.data() + b * inputSizePerFrame, floatImage.data, inputSizePerFrame * sizeof(float));
+        // NHWC to NCHW format
+        std::vector<cv::Mat> channelsSplit(channels);
+        cv::split(floatImage, channelsSplit);
+        for (int c = 0; c < channels; ++c) {
+            std::memcpy(batchInput.data() + i * channels * height * width + c * height * width,
+                        channelsSplit[c].data, height * width * sizeof(float));
+        }
     }
 
-    // Upload to GPU
-    CHECK_CUDA(cudaMemcpyAsync(buffers[0], batchInput.data(), batchSize * inputSizePerFrame * sizeof(float), cudaMemcpyHostToDevice, stream));
-
-    // Run inference
-    context->executeV2(buffers);
-
-    // Retrieve results
-    const int outputSize = batchSize * outputSizePerFrame;
-    std::vector<float> batchOutput(outputSize);
-    CHECK_CUDA(cudaMemcpyAsync(batchOutput.data(), buffers[1], outputSize * sizeof(float), cudaMemcpyDeviceToHost, stream));
-    cudaStreamSynchronize(stream);
-
-    // Parse and log results
-    parseBatchDetections(batchOutput.data(), batchSize, outputSizePerFrame, confidenceThreshold);
+    // Copy to GPU
+    CHECK_CUDA(cudaMemcpyAsync(gpuInput, batchInput.data(), batchInput.size() * sizeof(float), cudaMemcpyHostToDevice, stream));
 }
 
-int main() {
-    // Open video
-    std::string videoPath = "../asset/test.mp4";
-    cv::VideoCapture cap(videoPath);
+// Helper function for Non-Maximum Suppression (NMS)
+std::vector<int> nms(const std::vector<cv::Rect>& boxes, const std::vector<float>& scores, float iouThreshold) {
+    std::vector<int> indices;
+    std::vector<int> sortedIndices(scores.size());
+    std::iota(sortedIndices.begin(), sortedIndices.end(), 0);
 
-    if (!cap.isOpened()) {
-        std::cerr << "Error opening video file!" << std::endl;
+    std::sort(sortedIndices.begin(), sortedIndices.end(), [&scores](int i, int j) {
+        return scores[i] > scores[j];
+    });
+
+    while (!sortedIndices.empty()) {
+        int current = sortedIndices.front();
+        indices.push_back(current);
+        sortedIndices.erase(sortedIndices.begin());
+
+        auto it = std::remove_if(sortedIndices.begin(), sortedIndices.end(), [&](int idx) {
+            float iou = (float)(boxes[current] & boxes[idx]).area() / (float)(boxes[current] | boxes[idx]).area();
+            return iou > iouThreshold;
+        });
+        sortedIndices.erase(it, sortedIndices.end());
+    }
+
+    return indices;
+}
+
+// Postprocess YOLO output
+std::vector<std::vector<float>> postprocess(const float* output, int batchSize, int numClasses, int numAnchors, float confThreshold, float iouThreshold) {
+    std::vector<std::vector<float>> detections;
+
+    for (int b = 0; b < batchSize; ++b) {
+        std::vector<cv::Rect> boxes;
+        std::vector<float> confidences;
+        std::vector<int> classIds;
+
+        for (int anchor = 0; anchor < numAnchors; ++anchor) {
+            const float* anchorData = output + b * (numClasses + 4) * numAnchors + anchor;
+
+            // Bounding box attributes
+            float x = anchorData[0 * numAnchors];
+            float y = anchorData[1 * numAnchors];
+            float w = anchorData[2 * numAnchors];
+            float h = anchorData[3 * numAnchors];
+
+            // Class probabilities directly include objectness
+            const float* classScores = anchorData + 4 * numAnchors;
+            int maxClassId = std::distance(classScores, std::max_element(classScores, classScores + numClasses));
+            float confidence = classScores[maxClassId];
+
+            if (confidence < confThreshold) continue;
+
+            // Convert to top-left corner coordinates
+            int x1 = static_cast<int>(x - w / 2.0f);
+            int y1 = static_cast<int>(y - h / 2.0f);
+            int x2 = static_cast<int>(x + w / 2.0f);
+            int y2 = static_cast<int>(y + h / 2.0f);
+
+            boxes.emplace_back(cv::Rect(cv::Point(x1, y1), cv::Point(x2, y2)));
+            confidences.push_back(confidence);
+            classIds.push_back(maxClassId);
+        }
+
+        // Apply Non-Maximum Suppression (NMS)
+        std::vector<int> nmsIndices = nms(boxes, confidences, iouThreshold);
+
+        for (int idx : nmsIndices) {
+            const auto& box = boxes[idx];
+            detections.push_back({
+                (float)box.x, (float)box.y, (float)box.width, (float)box.height, confidences[idx], (float)classIds[idx]
+            });
+        }
+    }
+
+    return detections;
+}
+
+// YOLOv11 inference
+void yolov11BatchInference(std::vector<cv::Mat>& frames, nvinfer1::IExecutionContext* context, const nvinfer1::ICudaEngine* engine, void* buffers[], cudaStream_t stream, float confidenceThreshold) {
+    const int batchSize = frames.size();
+    const int inputChannels = 3;
+    const int inputHeight = 640;
+    const int inputWidth = 640;
+    const int outputClasses = 80; // Number of classes
+    const int outputBoxes = 8400; // Total number of anchors
+
+    preprocess(frames, static_cast<float*>(buffers[0]), batchSize, inputChannels, inputHeight, inputWidth, stream);
+
+    context->executeV2(buffers);
+
+    const int outputSize = batchSize * (outputClasses + 4) * outputBoxes;
+    std::vector<float> hostOutput(outputSize);
+    CHECK_CUDA(cudaMemcpy(hostOutput.data(), buffers[1], outputSize * sizeof(float), cudaMemcpyDeviceToHost));
+
+    auto detections = postprocess(hostOutput.data(), batchSize, outputClasses, outputBoxes, confidenceThreshold, 0.45);
+
+    for (const auto& det : detections) {
+        std::cout << "BBox: [" << det[0] << ", " << det[1] << ", " << det[2] << ", " << det[3]
+                  << "], Confidence: " << det[4] << ", Class: " << det[5] << std::endl;
+    }
+}
+
+bool endsWith(const std::string& str, const std::string& suffix) {
+    if (str.size() < suffix.size()) return false;
+    return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <input_path>" << std::endl;
         return -1;
     }
 
-    // Load TensorRT engine
+    std::string inputPath = argv[1];
+    bool isVideo = endsWith(inputPath, ".mp4");
+
     std::string enginePath = "../model-weigth/yolo11s.engine";
     auto engine = loadEngine(enginePath);
     if (!engine) return -1;
@@ -152,10 +210,9 @@ int main() {
         return -1;
     }
 
-    // Allocate buffers
     const int batchSize = 8;
-    const int inputSize = batchSize * 640 * 640 * 3;
-    const int outputSize = batchSize * 1000;
+    const int inputSize = batchSize * 3 * 640 * 640;
+    const int outputSize = batchSize * (80 + 4) * 8400;
     void* buffers[2];
     CHECK_CUDA(cudaMalloc(&buffers[0], inputSize * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&buffers[1], outputSize * sizeof(float)));
@@ -163,29 +220,46 @@ int main() {
     cudaStream_t stream;
     CHECK_CUDA(cudaStreamCreate(&stream));
 
-    float confidenceThreshold = 0.5f;
+    float confidenceThreshold = 0.9;
 
-    // Process video in batches
-    cv::Mat frame;
-    std::vector<cv::Mat> batchFrames;
-    while (cap.read(frame)) {
-        batchFrames.push_back(frame.clone());
-
-        if (batchFrames.size() == batchSize) {
-            yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
-            batchFrames.clear();
+    if (isVideo) {
+        cv::VideoCapture cap(inputPath);
+        if (!cap.isOpened()) {
+            std::cerr << "Error opening video file!" << std::endl;
+            return -1;
         }
+
+        cv::Mat frame;
+        std::vector<cv::Mat> batchFrames;
+        while (cap.read(frame)) {
+            batchFrames.push_back(frame.clone());
+
+            if (batchFrames.size() == batchSize) {
+                yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
+                batchFrames.clear();
+            }
+        }
+
+        if (!batchFrames.empty()) {
+            yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
+        }
+
+        cap.release();
+    } else {
+        std::vector<cv::Mat> images;
+        cv::Mat img = cv::imread(inputPath);
+        if (img.empty()) {
+            std::cerr << "Error loading image: " << inputPath << std::endl;
+            return -1;
+        }
+        images.push_back(img);
+
+        yolov11BatchInference(images, context, engine.get(), buffers, stream, confidenceThreshold);
     }
 
-    if (!batchFrames.empty()) {
-        yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
-    }
-
-    // Cleanup
     CHECK_CUDA(cudaStreamDestroy(stream));
     CHECK_CUDA(cudaFree(buffers[0]));
     CHECK_CUDA(cudaFree(buffers[1]));
-    cap.release();
 
     return 0;
 }

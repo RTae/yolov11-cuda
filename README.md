@@ -40,3 +40,12 @@ docker run --gpus all -it --rm \
 -v /home/rtae/yolo-cuda:/workspace/yolo-cuda \
 tensorrt-opencv5-python3.11-cuda bash
 ```
+
+```bash
+yolo export model=yolo11s.pt format=onnx batch=8 half=True
+
+trtexec --onnx=yolo11s.onnx \
+        --saveEngine=yolo11s.engine \
+        --memPoolSize=workspace:4G \
+        --fp16
+```

@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev \
     libtbb-dev libjpeg-dev libpng-dev libtiff-dev \
     libdc1394-dev libv4l-dev libopenblas-dev liblapack-dev libatlas-base-dev gfortran \
+    ffmpeg libsm6 libxext6
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y python3.11 python3.11-dev python3.11-distutils \
     && rm -rf /var/lib/apt/lists/*
