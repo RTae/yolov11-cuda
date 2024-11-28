@@ -34,3 +34,9 @@ cmake .. && make
 ```bash
 ./main ../test.jpg
 ```
+
+```bash
+docker run --gpus all -it --rm \
+-v /home/rtae/yolo-cuda:/workspace/yolo-cuda \
+tensorrt-opencv5-python3.11-cuda bash
+```
