@@ -6,9 +6,13 @@
 
 // Detection struct
 struct Detection {
-    cv::Rect bbox;   // Bounding box
-    float conf;      // Confidence
-    int class_id;    // Class ID
+    int class_id;  // Class ID
+    float conf;    // Confidence score
+    cv::Rect bbox; // Bounding box
+
+    // Constructor for ease of initialization
+    Detection(int classId, float confidence, const cv::Rect& box)
+        : class_id(classId), conf(confidence), bbox(box) {}
 };
 
 std::vector<Detection> postprocess(

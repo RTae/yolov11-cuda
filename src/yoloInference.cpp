@@ -6,14 +6,14 @@
 #include <vector>
 #include <iostream>
 
-// YOLOv11 Batch Inference
 std::vector<std::vector<Detection>> yolov11BatchInference(
     const std::vector<cv::Mat>& frames,
     nvinfer1::IExecutionContext* context,
     const nvinfer1::ICudaEngine* engine,
     void* buffers[],
     cudaStream_t stream,
-    float confidenceThreshold) {
+    float confidenceThreshold
+) {
     const int batchSize = frames.size();
     const int inputChannels = 3;
     const int inputHeight = 640;
@@ -23,6 +23,10 @@ std::vector<std::vector<Detection>> yolov11BatchInference(
 
     // Preprocess frames into batch
     preprocess(frames, static_cast<float*>(buffers[0]), batchSize, inputChannels, inputHeight, inputWidth, stream);
+
+    // Set tensor addresses
+    context->setTensorAddress("images", buffers[0]);  // Set input buffer
+    context->setTensorAddress("output0", buffers[1]); // Set output buffer
 
     // Execute inference using enqueueV3
     if (!context->enqueueV3(stream)) {
