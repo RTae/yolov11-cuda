@@ -87,6 +87,13 @@ void drawDetections(cv::Mat& image, const std::vector<std::vector<float>>& detec
         float confidence = det[4];
         int classId = static_cast<int>(det[5]);
 
+        // Log the detection details
+        std::cout << "Detection: "
+                  << "Class: " << classLabels[classId]
+                  << ", Confidence: " << confidence
+                  << ", BBox: [" << x << ", " << y << ", " << width << ", " << height << "]"
+                  << std::endl;
+
         // Draw the bounding box
         cv::rectangle(image, cv::Rect(x, y, width, height), cv::Scalar(0, 255, 0), 2);
 
