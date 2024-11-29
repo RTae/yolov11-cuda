@@ -1,4 +1,5 @@
 #include "logger.h"
+#include "common.h"
 #include "yoloInference.h"
 #include "preprocessor.h"
 #include "postprocessor.h"
@@ -54,43 +55,49 @@ int main(int argc, char** argv) {
     cudaStream_t stream;
     CHECK_CUDA(cudaStreamCreate(&stream));
 
-    // Example class labels (COCO dataset)
-    std::vector<std::string> classLabels = {"person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-                                            "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter",
-                                            "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear",
-                                            "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-                                            "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-                                            "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-                                            "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-                                            "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-                                            "potted plant", "bed", "dining table", "toilet", "TV", "laptop", "mouse",
-                                            "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-                                            "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
-                                            "toothbrush"};
+if (isVideo) {
+    cv::VideoCapture cap(inputPath);
+    if (!cap.isOpened()) {
+        std::cerr << "Error opening video file!" << std::endl;
+        return -1;
+    }
 
-    if (isVideo) {
-        cv::VideoCapture cap(inputPath);
-        if (!cap.isOpened()) {
-            std::cerr << "Error opening video file!" << std::endl;
-            return -1;
-        }
+    // Set up output video writer
+    int frameWidth = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+    int frameHeight = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    int fps = static_cast<int>(cap.get(cv::CAP_PROP_FPS));
+    std::string outputPath = "out_" + inputPath.substr(inputPath.find_last_of("/") + 1);
 
-        cv::Mat frame;
-        std::vector<cv::Mat> batchFrames;
-        while (cap.read(frame)) {
-            batchFrames.push_back(frame.clone());
+    // Use H264 codec for MP4 output
+    cv::VideoWriter writer(outputPath, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), fps, cv::Size(frameWidth, frameHeight));
 
-            if (batchFrames.size() == batchSize) {
-                auto allDetections = yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
-                batchFrames.clear();
-            }
-        }
+    if (!writer.isOpened()) {
+        std::cerr << "Error opening video writer!" << std::endl;
+        return -1;
+    }
 
-        if (!batchFrames.empty()) {
+    cv::Mat frame;
+    std::vector<cv::Mat> batchFrames;
+
+    while (cap.read(frame)) {
+        batchFrames.push_back(frame.clone());
+
+        // Process frames in batches
+        if (batchFrames.size() == batchSize || cap.get(cv::CAP_PROP_POS_FRAMES) == cap.get(cv::CAP_PROP_FRAME_COUNT)) {
             auto allDetections = yolov11BatchInference(batchFrames, context, engine.get(), buffers, stream, confidenceThreshold);
-        }
 
-        cap.release();
+            for (size_t i = 0; i < batchFrames.size(); ++i) {
+                if (!allDetections[i].empty()) {
+                    drawDetections(batchFrames[i], allDetections[i], classLabels, 640, 640);
+                }
+                writer.write(batchFrames[i]);
+            }
+            batchFrames.clear();
+        }
+    }
+
+    cap.release();
+    writer.release();
     } else {
         std::vector<cv::Mat> images;
         cv::Mat img = cv::imread(inputPath);
