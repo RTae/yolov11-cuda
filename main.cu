@@ -103,6 +103,13 @@ int main(int argc, char** argv) {
         std::cout << "Saved output to " << outputPath << std::endl;
     }
 
+    // Destroy the execution context explicitly
+    if (context) {
+        delete context;
+        context = nullptr;
+    }
+
+    // Free GPU resources
     CHECK_CUDA(cudaStreamDestroy(stream));
     CHECK_CUDA(cudaFree(buffers[0]));
     CHECK_CUDA(cudaFree(buffers[1]));
