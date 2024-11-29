@@ -9,6 +9,7 @@ std::vector<int> nms(const std::vector<cv::Rect>& boxes, const std::vector<float
     std::vector<int> sortedIndices(scores.size());
     std::iota(sortedIndices.begin(), sortedIndices.end(), 0);
 
+    // Sort scores in descending order
     std::sort(sortedIndices.begin(), sortedIndices.end(), [&scores](int i, int j) {
         return scores[i] > scores[j];
     });
@@ -38,28 +39,32 @@ std::vector<std::vector<float>> postprocess(const float* output, int batchSize, 
         std::vector<int> classIds;
 
         for (int anchor = 0; anchor < numAnchors; ++anchor) {
-            const float* anchorData = output + b * (numClasses + 4) * numAnchors + anchor;
+            const float* anchorData = output + b * (numClasses + 5) * numAnchors + anchor * (numClasses + 5);
 
             // Bounding box attributes
-            float x = anchorData[0 * numAnchors];
-            float y = anchorData[1 * numAnchors];
-            float w = anchorData[2 * numAnchors];
-            float h = anchorData[3 * numAnchors];
+            float x = anchorData[0];  // Center x
+            float y = anchorData[1];  // Center y
+            float w = anchorData[2];  // Width
+            float h = anchorData[3];  // Height
+            float objectness = anchorData[4];  // Objectness score
 
-            // Class probabilities directly include objectness
-            const float* classScores = anchorData + 4 * numAnchors;
+            // Class probabilities
+            const float* classScores = anchorData + 5;
             int maxClassId = std::distance(classScores, std::max_element(classScores, classScores + numClasses));
-            float confidence = classScores[maxClassId];
+            float classConfidence = classScores[maxClassId];
+
+            // Final confidence = objectness * class confidence
+            float confidence = objectness * classConfidence;
 
             if (confidence < confThreshold) continue;
 
-            // Convert to top-left corner coordinates
+            // Convert center coordinates to top-left corner
             int x1 = static_cast<int>(x - w / 2.0f);
             int y1 = static_cast<int>(y - h / 2.0f);
-            int x2 = static_cast<int>(x + w / 2.0f);
-            int y2 = static_cast<int>(y + h / 2.0f);
+            int width = static_cast<int>(w);
+            int height = static_cast<int>(h);
 
-            boxes.emplace_back(cv::Rect(cv::Point(x1, y1), cv::Point(x2, y2)));
+            boxes.emplace_back(cv::Rect(cv::Point(x1, y1), cv::Size(width, height)));
             confidences.push_back(confidence);
             classIds.push_back(maxClassId);
         }

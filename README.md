@@ -27,12 +27,12 @@ sudo ldconfig
 ## Build
 ```bash
 rm -rf build && mkdir build && cd build
-cmake .. && make
+cmake .. && make && cd ../
 ```
 
 ## Run
 ```bash
-./main ../test.jpg
+./build/main ./asset/bus.jpg
 ```
 
 ```bash

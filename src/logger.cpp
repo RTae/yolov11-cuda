@@ -16,3 +16,22 @@ const char* Logger::getSeverityString(Severity severity) const {
         default: return "UNKNOWN";
     }
 }
+
+void printBindingsInfo(const nvinfer1::ICudaEngine* engine) {
+    std::cout << "=== TensorRT Bindings ===" << std::endl;
+
+    int nbIOTensors = engine->getNbIOTensors();  // Get the number of I/O tensors
+    for (int i = 0; i < nbIOTensors; ++i) {
+        const char* tensorName = engine->getIOTensorName(i);  // Get tensor name
+        nvinfer1::Dims dims = engine->getTensorShape(tensorName);  // Get tensor dimensions
+        bool isInput = engine->getTensorIOMode(tensorName) == nvinfer1::TensorIOMode::kINPUT;
+
+        std::cout << (isInput ? "Input " : "Output ") << i << ": " << tensorName << " | Dimensions: ";
+        for (int j = 0; j < dims.nbDims; ++j) {
+            std::cout << dims.d[j];
+            if (j < dims.nbDims - 1) std::cout << "x";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << "=========================" << std::endl;
+}

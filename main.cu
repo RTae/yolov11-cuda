@@ -5,23 +5,37 @@
 #include "utils.h"
 #include <opencv2/opencv.hpp>
 #include <filesystem>
+#include <sstream>
 
 // Instantiate a global logger
 Logger gLogger;
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <input_path>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input_path> [engine_path] [batch_size] [confidence_threshold]" << std::endl;
         return -1;
     }
 
     std::string inputPath = argv[1];
+    std::string enginePath = (argc > 2) ? argv[2] : "./asset/model-weigth/yolo11s.engine";
+    int batchSize = (argc > 3) ? std::stoi(argv[3]) : 8;
+    float confidenceThreshold = (argc > 4) ? std::stof(argv[4]) : 0.9;
+
+    if (batchSize <= 0) {
+        std::cerr << "Invalid batch size. It must be greater than 0." << std::endl;
+        return -1;
+    }
+    if (confidenceThreshold <= 0.0f || confidenceThreshold > 1.0f) {
+        std::cerr << "Invalid confidence threshold. It must be between 0 and 1." << std::endl;
+        return -1;
+    }
+
     bool isVideo = inputPath.find(".mp4") != std::string::npos;
 
-    std::string enginePath = "../model-weigth/yolo11s.engine";
+    Logger gLogger;
     auto engine = loadEngine(enginePath, gLogger);
     if (!engine) {
-        std::cerr << "Error loading TensorRT engine!" << std::endl;
+        std::cerr << "Error loading TensorRT engine from path: " << enginePath << std::endl;
         return -1;
     }
 
@@ -31,7 +45,6 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    const int batchSize = 8;
     const int inputSize = batchSize * 3 * 640 * 640;
     const int outputSize = batchSize * (80 + 4) * 8400;
     void* buffers[2];
@@ -40,8 +53,6 @@ int main(int argc, char** argv) {
 
     cudaStream_t stream;
     CHECK_CUDA(cudaStreamCreate(&stream));
-
-    float confidenceThreshold = 0.90;
 
     // Example class labels (COCO dataset)
     std::vector<std::string> classLabels = {"person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
