@@ -1,80 +1,67 @@
 #include "postprocessor.h"
 #include <opencv2/opencv.hpp>
-#include <vector>
 #include <iostream>
+#include <vector>
+#include <algorithm>
 
-// Postprocess the inference output to extract detections
 std::vector<Detection> postprocess(
-    const float* output, 
-    int numAnchors, 
-    int numClasses, 
-    float confThreshold, 
-    float nmsThreshold) {
-
+    const float* output, int numCandidates, int numClasses, float confThreshold, float nmsThreshold) {
     std::vector<Detection> detections;
     std::vector<cv::Rect> boxes;
-    std::vector<float> confidences;
     std::vector<int> classIds;
+    std::vector<float> confidences;
 
-    std::cout << "Starting postprocess..." << std::endl;
+    // Process each candidate box
+    for (int i = 0; i < numCandidates; ++i) {
+        // Bounding box attributes
+        float x = output[i * (numClasses + 4)];
+        float y = output[i * (numClasses + 4) + 1];
+        float w = output[i * (numClasses + 4) + 2];
+        float h = output[i * (numClasses + 4) + 3];
 
-    // Iterate over all anchors
-    for (int anchor = 0; anchor < numAnchors; ++anchor) {
-        // Extract bounding box attributes
-        float xCenter = output[anchor];                              // Center x
-        float yCenter = output[numAnchors + anchor];                 // Center y
-        float width = output[2 * numAnchors + anchor];               // Width
-        float height = output[3 * numAnchors + anchor];              // Height
-        float objectness = output[4 * numAnchors + anchor];          // Objectness score
+        // Class scores start at index (4)
+        const float* classScores = output + i * (numClasses + 4) + 4;
 
-        // Extract class probabilities
-        const float* classScores = output + 5 * numAnchors + anchor * numClasses;
+        // Find the class with the maximum score
+        int maxClassId = std::distance(classScores, std::max_element(classScores, classScores + numClasses));
+        float confidence = classScores[maxClassId];
 
-        // Find the class with the maximum probability
-        cv::Point maxClassIdPoint;
-        double maxClassScore;
-        cv::minMaxLoc(cv::Mat(1, numClasses, CV_32F, (void*)classScores), nullptr, &maxClassScore, nullptr, &maxClassIdPoint);
+        // Check if the confidence is above the threshold
+        if (confidence >= confThreshold) {
+            // Convert (cx, cy, w, h) to top-left corner (x1, y1) and width/height
+            int x1 = static_cast<int>(x - w / 2.0f);
+            int y1 = static_cast<int>(y - h / 2.0f);
+            int width = static_cast<int>(w);
+            int height = static_cast<int>(h);
 
-        // Compute the final confidence
-        float confidence = objectness * static_cast<float>(maxClassScore);
-
-        // Log confidence scores and bounding box details
-        std::cout << "Anchor: " << anchor 
-                  << ", Objectness: " << objectness 
-                  << ", Max Class Confidence: " << maxClassScore 
-                  << ", Final Confidence: " << confidence 
-                  << ", BBox: [" << xCenter << ", " << yCenter << ", " 
-                  << width << ", " << height << "]" 
-                  << std::endl;
-
-        if (confidence < confThreshold) {
-            continue; // Skip low-confidence detections
+            boxes.emplace_back(cv::Rect(cv::Point(x1, y1), cv::Size(width, height)));
+            confidences.push_back(confidence);
+            classIds.push_back(maxClassId);
         }
-
-        // Convert (center x, center y, width, height) to (x, y, width, height)
-        int x = static_cast<int>(xCenter - width / 2.0f);
-        int y = static_cast<int>(yCenter - height / 2.0f);
-        int w = static_cast<int>(width);
-        int h = static_cast<int>(height);
-
-        // Store results
-        boxes.emplace_back(x, y, w, h);
-        confidences.push_back(confidence);
-        classIds.push_back(maxClassIdPoint.x);
     }
 
-    std::cout << "Total pre-NMS detections: " << confidences.size() << std::endl;
+    // Apply Non-Maximum Suppression (NMS) using OpenCV
+    std::vector<int> nmsIndices;
+    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, nmsIndices);
 
-    // Perform Non-Maximum Suppression (NMS)
-    std::vector<int> indices;
-    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
-
-    // Extract NMS results
-    for (int idx : indices) {
-        detections.push_back(Detection{classIds[idx], confidences[idx], boxes[idx]});
+    for (int idx : nmsIndices) {
+        detections.push_back({
+            classIds[idx],         // Class ID
+            confidences[idx],      // Confidence score
+            boxes[idx]             // Bounding box
+        });
     }
 
-    std::cout << "Total post-NMS detections: " << detections.size() << std::endl;
+    // Log detections
+    std::cout << "Post-NMS Detections: " << detections.size() << std::endl;
+    for (const auto& det : detections) {
+        std::cout << "Detection: "
+                  << "Class ID: " << det.class_id
+                  << ", Confidence: " << det.conf
+                  << ", BBox: [" << det.bbox.x << ", " << det.bbox.y
+                  << ", " << det.bbox.width << ", " << det.bbox.height << "]"
+                  << std::endl;
+    }
 
     return detections;
 }

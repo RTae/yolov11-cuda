@@ -105,15 +105,6 @@ int main(int argc, char** argv) {
 
         if (!allDetections.empty() && !allDetections[0].empty()) {
             const auto& detections = allDetections[0]; // Access detections for the first image
-            for (const auto& det : detections) {
-                // Log detection details
-                std::cout << "Detection: "
-                        << "Class ID: " << det.class_id
-                        << ", Confidence: " << det.conf
-                        << ", BBox: [" << det.bbox.x << ", " << det.bbox.y
-                        << ", " << det.bbox.width << ", " << det.bbox.height << "]"
-                        << std::endl;
-            }
 
             // Draw detections on the image
             drawDetections(img, detections, classLabels);

@@ -15,14 +15,11 @@ std::vector<std::vector<Detection>> yolov11BatchInference(
     float confidenceThreshold) {
 
     const int batchSize = frames.size();
-    const int inputChannels = 3;
-    const int inputHeight = 640;
-    const int inputWidth = 640;
-    const int outputClasses = 80; // Number of classes
-    const int outputBoxes = 8400; // Total number of anchors
+    const int numClasses = 80;
+    const int numAnchors = 8400;
 
-    // Preprocess frames into batch
-    preprocess(frames, static_cast<float*>(buffers[0]), batchSize, inputChannels, inputHeight, inputWidth, stream);
+    // Preprocess input frames
+    preprocess(frames, static_cast<float*>(buffers[0]), batchSize, 3, 640, 640, stream);
 
     // Execute inference using enqueueV3
     context->setInputTensorAddress("images", buffers[0]);   // Set the input tensor address
@@ -33,26 +30,17 @@ std::vector<std::vector<Detection>> yolov11BatchInference(
     }
 
     // Copy inference results back to host
-    const int outputSize = batchSize * (outputClasses + 5) * outputBoxes; // +5 for bbox attributes
+    const int outputSize = batchSize * (numClasses + 4) * numAnchors;
     std::vector<float> hostOutput(outputSize);
     CHECK_CUDA(cudaMemcpyAsync(hostOutput.data(), buffers[1], outputSize * sizeof(float), cudaMemcpyDeviceToHost, stream));
     cudaStreamSynchronize(stream);
-
-    // Log output dimensions
-    std::cout << "Model Output Dimensions: Batch Size: " << batchSize
-              << ", Output Classes: " << outputClasses
-              << ", Output Boxes: " << outputBoxes << std::endl;
 
     // Postprocess detections for each frame in the batch
     std::vector<std::vector<Detection>> allDetections(batchSize);
     for (int i = 0; i < batchSize; ++i) {
         allDetections[i] = postprocess(
-            hostOutput.data() + i * (outputClasses + 5) * outputBoxes, // Offset for each batch
-            outputBoxes,           // numDetections (total anchors)
-            outputClasses,         // numClasses
-            confidenceThreshold,   // confThreshold
-            0.45                   // nmsThreshold
-        );
+            hostOutput.data() + i * (numClasses + 4) * numAnchors,
+            numAnchors, numClasses, confidenceThreshold, 0.45);
     }
 
     return allDetections;
