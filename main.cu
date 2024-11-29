@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     std::string inputPath = argv[1];
     std::string enginePath = (argc > 2) ? argv[2] : "./asset/model-weigth/yolo11s.engine";
     int batchSize = (argc > 3) ? std::stoi(argv[3]) : 8;
-    float confidenceThreshold = (argc > 4) ? std::stof(argv[4]) : 0.9;
+    float confidenceThreshold = (argc > 4) ? std::stof(argv[4]) : 0.7;
 
     if (batchSize <= 0) {
         std::cerr << "Invalid batch size. It must be greater than 0." << std::endl;
@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
             const auto& detections = allDetections[0]; // Access detections for the first image
 
             // Draw detections on the image
-            drawDetections(img, detections, classLabels);
+            drawDetections(img, allDetections[0], classLabels, 640, 640); 
 
             // Save the image with detections
             std::string outputPath = "out_" + inputPath.substr(inputPath.find_last_of("/") + 1);
