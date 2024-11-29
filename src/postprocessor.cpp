@@ -1,96 +1,65 @@
-#include "postprocessor.h"
 #include <opencv2/opencv.hpp>
-#include <algorithm>
-#include <numeric>
+#include <vector>
+#include <string>
+#include <iostream>
+#include "postprocessor.h"
 
-// Helper function for Non-Maximum Suppression (NMS)
-std::vector<int> nms(const std::vector<cv::Rect>& boxes, const std::vector<float>& scores, float iouThreshold) {
-    std::vector<int> indices;
-    std::vector<int> sortedIndices(scores.size());
-    std::iota(sortedIndices.begin(), sortedIndices.end(), 0);
+std::vector<Detection> postprocess(
+    const float* output, int numDetections, int numClasses,
+    float confThreshold, float nmsThreshold) {
+    std::vector<cv::Rect> boxes;          // Bounding boxes
+    std::vector<int> class_ids;           // Class IDs
+    std::vector<float> confidences;       // Confidence scores
+    std::vector<Detection> detections;    // Final detection results
 
-    // Sort scores in descending order
-    std::sort(sortedIndices.begin(), sortedIndices.end(), [&scores](int i, int j) {
-        return scores[i] > scores[j];
-    });
+    for (int i = 0; i < numDetections; ++i) {
+        const float* detectionData = output + i * (numClasses + 4); // Access detection data
+        float cx = detectionData[0];  // Center x
+        float cy = detectionData[1];  // Center y
+        float ow = detectionData[2];  // Width
+        float oh = detectionData[3];  // Height
 
-    while (!sortedIndices.empty()) {
-        int current = sortedIndices.front();
-        indices.push_back(current);
-        sortedIndices.erase(sortedIndices.begin());
+        const float* classScores = detectionData + 4; // Class scores
+        int maxClassId = std::max_element(classScores, classScores + numClasses) - classScores;
+        float classConfidence = classScores[maxClassId];
 
-        auto it = std::remove_if(sortedIndices.begin(), sortedIndices.end(), [&](int idx) {
-            float iou = (float)(boxes[current] & boxes[idx]).area() / (float)(boxes[current] | boxes[idx]).area();
-            return iou > iouThreshold;
-        });
-        sortedIndices.erase(it, sortedIndices.end());
+        float confidence = classConfidence; // Use class confidence directly
+
+        if (confidence > confThreshold) {
+            int x = static_cast<int>(cx - ow / 2.0f);
+            int y = static_cast<int>(cy - oh / 2.0f);
+            int width = static_cast<int>(ow);
+            int height = static_cast<int>(oh);
+
+            boxes.emplace_back(cv::Rect(x, y, width, height));
+            class_ids.push_back(maxClassId);
+            confidences.push_back(confidence);
+        }
     }
 
-    return indices;
-}
+    std::vector<int> nmsIndices;
+    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, nmsIndices);
 
-// Postprocess YOLO output
-std::vector<std::vector<float>> postprocess(const float* output, int batchSize, int numClasses, int numAnchors, float confThreshold, float iouThreshold) {
-    std::vector<std::vector<float>> detections;
-
-    for (int b = 0; b < batchSize; ++b) {
-        std::vector<cv::Rect> boxes;
-        std::vector<float> confidences;
-        std::vector<int> classIds;
-
-        for (int anchor = 0; anchor < numAnchors; ++anchor) {
-            const float* anchorData = output + b * (numClasses + 5) * numAnchors + anchor * (numClasses + 5);
-
-            // Bounding box attributes
-            float x = anchorData[0];  // Center x
-            float y = anchorData[1];  // Center y
-            float w = anchorData[2];  // Width
-            float h = anchorData[3];  // Height
-            float objectness = anchorData[4];  // Objectness score
-
-            // Class probabilities
-            const float* classScores = anchorData + 5;
-            int maxClassId = std::distance(classScores, std::max_element(classScores, classScores + numClasses));
-            float classConfidence = classScores[maxClassId];
-
-            // Final confidence = objectness * class confidence
-            float confidence = objectness * classConfidence;
-
-            if (confidence < confThreshold) continue;
-
-            // Convert center coordinates to top-left corner
-            int x1 = static_cast<int>(x - w / 2.0f);
-            int y1 = static_cast<int>(y - h / 2.0f);
-            int width = static_cast<int>(w);
-            int height = static_cast<int>(h);
-
-            boxes.emplace_back(cv::Rect(cv::Point(x1, y1), cv::Size(width, height)));
-            confidences.push_back(confidence);
-            classIds.push_back(maxClassId);
-        }
-
-        // Apply Non-Maximum Suppression (NMS)
-        std::vector<int> nmsIndices = nms(boxes, confidences, iouThreshold);
-
-        for (int idx : nmsIndices) {
-            const auto& box = boxes[idx];
-            detections.push_back({
-                (float)box.x, (float)box.y, (float)box.width, (float)box.height, confidences[idx], (float)classIds[idx]
-            });
-        }
+    for (int idx : nmsIndices) {
+        Detection det;
+        det.class_id = class_ids[idx];
+        det.conf = confidences[idx];
+        det.bbox = boxes[idx];
+        detections.push_back(det);
     }
 
     return detections;
 }
 
-void drawDetections(cv::Mat& image, const std::vector<std::vector<float>>& detections, const std::vector<std::string>& classLabels) {
+void drawDetections(cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& classLabels) {
     for (const auto& det : detections) {
-        int x = static_cast<int>(det[0]);
-        int y = static_cast<int>(det[1]);
-        int width = static_cast<int>(det[2]);
-        int height = static_cast<int>(det[3]);
-        float confidence = det[4];
-        int classId = static_cast<int>(det[5]);
+        // Extract bounding box information
+        int x = det.bbox.x;
+        int y = det.bbox.y;
+        int width = det.bbox.width;
+        int height = det.bbox.height;
+        float confidence = det.conf;
+        int classId = det.class_id;
 
         // Log the detection details
         std::cout << "Detection: "

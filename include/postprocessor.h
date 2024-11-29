@@ -4,13 +4,18 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-// Perform Non-Maximum Suppression (NMS) to filter overlapping detections
-std::vector<int> nms(const std::vector<cv::Rect>& boxes, const std::vector<float>& scores, float iouThreshold);
+// Detection struct
+struct Detection {
+    cv::Rect bbox;   // Bounding box
+    float conf;      // Confidence
+    int class_id;    // Class ID
+};
 
-// Postprocess YOLO output to extract bounding boxes, class IDs, and confidence scores
-std::vector<std::vector<float>> postprocess(const float* output, int batchSize, int numClasses, int numAnchors, float confThreshold, float iouThreshold);
+std::vector<Detection> postprocess(
+    const float* output, int numDetections, int numClasses,
+    float confThreshold, float nmsThreshold);
 
 // Draw detections on an image
 void drawDetections(cv::Mat& image, const std::vector<std::vector<float>>& detections, const std::vector<std::string>& classLabels);
 
-#endif
+#endif // POSTPROCESSOR_H
