@@ -12,8 +12,8 @@ std::vector<std::vector<Detection>> yolov11BatchInference(
     const nvinfer1::ICudaEngine* engine,
     void* buffers[],
     cudaStream_t stream,
-    float confidenceThreshold
-) {
+    float confidenceThreshold) {
+
     const int batchSize = frames.size();
     const int inputChannels = 3;
     const int inputHeight = 640;
@@ -24,26 +24,30 @@ std::vector<std::vector<Detection>> yolov11BatchInference(
     // Preprocess frames into batch
     preprocess(frames, static_cast<float*>(buffers[0]), batchSize, inputChannels, inputHeight, inputWidth, stream);
 
-    // Set tensor addresses
-    context->setTensorAddress("images", buffers[0]);  // Set input buffer
-    context->setTensorAddress("output0", buffers[1]); // Set output buffer
-
     // Execute inference using enqueueV3
+    context->setInputTensorAddress("images", buffers[0]);   // Set the input tensor address
+    context->setTensorAddress("output0", buffers[1]);       // Set the output tensor address
+
     if (!context->enqueueV3(stream)) {
         throw std::runtime_error("Failed to execute inference with TensorRT.");
     }
 
     // Copy inference results back to host
-    const int outputSize = batchSize * (outputClasses + 4) * outputBoxes;
+    const int outputSize = batchSize * (outputClasses + 5) * outputBoxes; // +5 for bbox attributes
     std::vector<float> hostOutput(outputSize);
     CHECK_CUDA(cudaMemcpyAsync(hostOutput.data(), buffers[1], outputSize * sizeof(float), cudaMemcpyDeviceToHost, stream));
     cudaStreamSynchronize(stream);
+
+    // Log output dimensions
+    std::cout << "Model Output Dimensions: Batch Size: " << batchSize
+              << ", Output Classes: " << outputClasses
+              << ", Output Boxes: " << outputBoxes << std::endl;
 
     // Postprocess detections for each frame in the batch
     std::vector<std::vector<Detection>> allDetections(batchSize);
     for (int i = 0; i < batchSize; ++i) {
         allDetections[i] = postprocess(
-            hostOutput.data() + i * (outputClasses + 4) * outputBoxes, // Offset for each batch
+            hostOutput.data() + i * (outputClasses + 5) * outputBoxes, // Offset for each batch
             outputBoxes,           // numDetections (total anchors)
             outputClasses,         // numClasses
             confidenceThreshold,   // confThreshold

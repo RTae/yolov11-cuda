@@ -10,16 +10,6 @@
 // Instantiate a global logger
 Logger gLogger;
 
-void logTensorNames(const nvinfer1::ICudaEngine* engine) {
-    int nbTensors = engine->getNbIOTensors(); // Get the number of input/output tensors
-    for (int i = 0; i < nbTensors; ++i) {
-        const char* name = engine->getIOTensorName(i); // Get tensor name
-        auto mode = engine->getTensorIOMode(name); // Get IO mode using tensor name
-        bool isInput = mode == nvinfer1::TensorIOMode::kINPUT; // Check if it's an input tensor
-        std::cout << (isInput ? "Input" : "Output") << " Tensor [" << i << "]: " << name << std::endl;
-    }
-}
-
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <input_path> [engine_path] [batch_size] [confidence_threshold]" << std::endl;
@@ -54,8 +44,6 @@ int main(int argc, char** argv) {
         std::cerr << "Error creating execution context!" << std::endl;
         return -1;
     }
-
-    logTensorNames(engine.get());
 
     const int inputSize = batchSize * 3 * 640 * 640;
     const int outputSize = batchSize * (80 + 4) * 8400;
@@ -115,11 +103,10 @@ int main(int argc, char** argv) {
         // Run inference and get detections
         auto allDetections = yolov11BatchInference(images, context, engine.get(), buffers, stream, confidenceThreshold);
 
-        // Log detections for the first image
         if (!allDetections.empty() && !allDetections[0].empty()) {
             const auto& detections = allDetections[0]; // Access detections for the first image
             for (const auto& det : detections) {
-                // Log the detection information
+                // Log detection details
                 std::cout << "Detection: "
                         << "Class ID: " << det.class_id
                         << ", Confidence: " << det.conf
@@ -127,12 +114,15 @@ int main(int argc, char** argv) {
                         << ", " << det.bbox.width << ", " << det.bbox.height << "]"
                         << std::endl;
             }
-        }
 
-        // Save the image with detections
-        std::string outputPath = "out_" + inputPath.substr(inputPath.find_last_of("/") + 1);
-        cv::imwrite(outputPath, img);
-        std::cout << "Saved output to " << outputPath << std::endl;
+            // Draw detections on the image
+            drawDetections(img, detections, classLabels);
+
+            // Save the image with detections
+            std::string outputPath = "out_" + inputPath.substr(inputPath.find_last_of("/") + 1);
+            cv::imwrite(outputPath, img);
+            std::cout << "Saved output to " << outputPath << std::endl;
+        }
     }
 
     // Destroy the execution context explicitly

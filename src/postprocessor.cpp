@@ -1,85 +1,93 @@
+#include "postprocessor.h"
 #include <opencv2/opencv.hpp>
 #include <vector>
-#include <string>
 #include <iostream>
-#include "postprocessor.h"
 
-std::vector<Detection> postprocess(const float* output, int numDetections, int numClasses, float confThreshold, float nmsThreshold) {
+// Postprocess the inference output to extract detections
+std::vector<Detection> postprocess(
+    const float* output, 
+    int numAnchors, 
+    int numClasses, 
+    float confThreshold, 
+    float nmsThreshold) {
+
     std::vector<Detection> detections;
     std::vector<cv::Rect> boxes;
-    std::vector<int> classIds;
     std::vector<float> confidences;
+    std::vector<int> classIds;
 
-    // Parse detections
-    for (int i = 0; i < numDetections; ++i) {
-        float objectness = output[i * (numClasses + 5) + 4]; // Objectness score
-        if (objectness < confThreshold) continue;
+    std::cout << "Starting postprocess..." << std::endl;
 
-        // Bounding box attributes
-        float x = output[i * (numClasses + 5)];
-        float y = output[i * (numClasses + 5) + 1];
-        float w = output[i * (numClasses + 5) + 2];
-        float h = output[i * (numClasses + 5) + 3];
+    // Iterate over all anchors
+    for (int anchor = 0; anchor < numAnchors; ++anchor) {
+        // Extract bounding box attributes
+        float xCenter = output[anchor];                              // Center x
+        float yCenter = output[numAnchors + anchor];                 // Center y
+        float width = output[2 * numAnchors + anchor];               // Width
+        float height = output[3 * numAnchors + anchor];              // Height
+        float objectness = output[4 * numAnchors + anchor];          // Objectness score
 
-        int x1 = static_cast<int>(x - w / 2.0f);
-        int y1 = static_cast<int>(y - h / 2.0f);
-        int width = static_cast<int>(w);
-        int height = static_cast<int>(h);
+        // Extract class probabilities
+        const float* classScores = output + 5 * numAnchors + anchor * numClasses;
 
-        cv::Rect bbox(x1, y1, width, height);
+        // Find the class with the maximum probability
+        cv::Point maxClassIdPoint;
+        double maxClassScore;
+        cv::minMaxLoc(cv::Mat(1, numClasses, CV_32F, (void*)classScores), nullptr, &maxClassScore, nullptr, &maxClassIdPoint);
 
-        // Class probabilities
-        const float* classScores = output + i * (numClasses + 5) + 5;
-        int maxClassId = std::max_element(classScores, classScores + numClasses) - classScores;
-        float confidence = objectness * classScores[maxClassId];
+        // Compute the final confidence
+        float confidence = objectness * static_cast<float>(maxClassScore);
 
-        if (confidence >= confThreshold) {
-            boxes.push_back(bbox);
-            classIds.push_back(maxClassId);
-            confidences.push_back(confidence);
+        // Log confidence scores and bounding box details
+        std::cout << "Anchor: " << anchor 
+                  << ", Objectness: " << objectness 
+                  << ", Max Class Confidence: " << maxClassScore 
+                  << ", Final Confidence: " << confidence 
+                  << ", BBox: [" << xCenter << ", " << yCenter << ", " 
+                  << width << ", " << height << "]" 
+                  << std::endl;
+
+        if (confidence < confThreshold) {
+            continue; // Skip low-confidence detections
         }
+
+        // Convert (center x, center y, width, height) to (x, y, width, height)
+        int x = static_cast<int>(xCenter - width / 2.0f);
+        int y = static_cast<int>(yCenter - height / 2.0f);
+        int w = static_cast<int>(width);
+        int h = static_cast<int>(height);
+
+        // Store results
+        boxes.emplace_back(x, y, w, h);
+        confidences.push_back(confidence);
+        classIds.push_back(maxClassIdPoint.x);
     }
 
-    // Apply NMS
+    std::cout << "Total pre-NMS detections: " << confidences.size() << std::endl;
+
+    // Perform Non-Maximum Suppression (NMS)
     std::vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
 
-    // Create detections
+    // Extract NMS results
     for (int idx : indices) {
-        detections.push_back(Detection(classIds[idx], confidences[idx], boxes[idx]));
+        detections.push_back(Detection{classIds[idx], confidences[idx], boxes[idx]});
     }
+
+    std::cout << "Total post-NMS detections: " << detections.size() << std::endl;
 
     return detections;
 }
 
-void drawDetections(cv::Mat& image, const std::vector<std::vector<float>>& detections, const std::vector<std::string>& classLabels) {
+void drawDetections(cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& classLabels) {
     for (const auto& det : detections) {
-        // Ensure the detection data has the required fields (x, y, width, height, confidence, classId)
-        if (det.size() < 6) {
-            std::cerr << "Invalid detection format. Expected at least 6 fields, got " << det.size() << "." << std::endl;
-            continue;
-        }
-
-        // Extract bounding box and detection info
-        int x = static_cast<int>(det[0]);
-        int y = static_cast<int>(det[1]);
-        int width = static_cast<int>(det[2]);
-        int height = static_cast<int>(det[3]);
-        float confidence = det[4];
-        int classId = static_cast<int>(det[5]);
-
-        // Validate classId against classLabels
-        if (classId < 0 || classId >= static_cast<int>(classLabels.size())) {
-            std::cerr << "Invalid classId: " << classId << ". Skipping detection." << std::endl;
-            continue;
-        }
-
-        // Log the detection details
-        std::cout << "Detection: "
-                  << "Class: " << classLabels[classId]
-                  << ", Confidence: " << confidence
-                  << ", BBox: [" << x << ", " << y << ", " << width << ", " << height << "]"
-                  << std::endl;
+        // Extract bounding box information
+        int x = det.bbox.x;
+        int y = det.bbox.y;
+        int width = det.bbox.width;
+        int height = det.bbox.height;
+        float confidence = det.conf;
+        int classId = det.class_id;
 
         // Draw the bounding box
         cv::rectangle(image, cv::Rect(x, y, width, height), cv::Scalar(0, 255, 0), 2);
