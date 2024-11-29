@@ -7,21 +7,39 @@
 #include <opencv2/opencv.hpp>
 #include <filesystem>
 #include <sstream>
+#include <map>
 
 // Instantiate a global logger
 Logger gLogger;
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <input_path> [engine_path] [batch_size] [confidence_threshold]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input_path> [--engine_path=PATH] [--batch_size=N] [--confidence_threshold=FLOAT]" << std::endl;
         return -1;
     }
 
-    std::string inputPath = argv[1];
-    std::string enginePath = (argc > 2) ? argv[2] : "./asset/model-weigth/yolo11s.engine";
-    int batchSize = (argc > 3) ? std::stoi(argv[3]) : 8;
-    float confidenceThreshold = (argc > 4) ? std::stof(argv[4]) : 0.7;
+    // Parse arguments
+    std::string inputPath;
+    std::string enginePath = "./asset/model-weigth/yolo11s.engine";
+    int batchSize = 8;
+    float confidenceThreshold = 0.7;
 
+    // Parse required input path
+    inputPath = argv[1];
+
+    // Parse optional arguments
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg.find("--engine_path=") == 0) {
+            enginePath = arg.substr(14); // Extract value after '='
+        } else if (arg.find("--batch_size=") == 0) {
+            batchSize = std::stoi(arg.substr(13));
+        } else if (arg.find("--confidence_threshold=") == 0) {
+            confidenceThreshold = std::stof(arg.substr(23));
+        }
+    }
+
+    // Validate inputs
     if (batchSize <= 0) {
         std::cerr << "Invalid batch size. It must be greater than 0." << std::endl;
         return -1;

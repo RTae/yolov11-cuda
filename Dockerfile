@@ -1,61 +1,26 @@
-# Use NVIDIA TensorRT base image
-FROM nvcr.io/nvidia/tensorrt:24.11-py3
-
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Etc/UTC
-
-# Install dependencies for Python 3.11 and OpenCV
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    build-essential cmake git wget unzip yasm \
-    libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev \
-    libtbb-dev libjpeg-dev libpng-dev libtiff-dev \
-    libdc1394-dev libv4l-dev libopenblas-dev liblapack-dev libatlas-base-dev gfortran \
-    ffmpeg libsm6 libxext6
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y python3.11 python3.11-dev python3.11-distutils \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set Python 3.11 as the default for both `python3` and `python`
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python
-
-# Install pip for Python 3.11
-RUN wget https://bootstrap.pypa.io/get-pip.py \
-    && python3 get-pip.py \
-    && rm get-pip.py
-
-# Clone OpenCV 5.x repositories
-WORKDIR /tmp
-RUN git clone --branch 5.x --depth 1 https://github.com/opencv/opencv.git \
-    && git clone --branch 5.x --depth 1 https://github.com/opencv/opencv_contrib.git
-
-# Build and install OpenCV 5.x with CUDA support for Python 3.11
-WORKDIR /tmp/opencv/build
-RUN cmake -D CMAKE_BUILD_TYPE=Release \
-          -D CMAKE_INSTALL_PREFIX=/usr/local \
-          -D OPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib/modules \
-          -D WITH_CUDA=ON \
-          -D ENABLE_FAST_MATH=1 \
-          -D CUDA_FAST_MATH=1 \
-          -D WITH_CUBLAS=1 \
-          -D BUILD_opencv_python3=ON \
-          -D BUILD_opencv_python2=OFF \
-          -D PYTHON3_EXECUTABLE=$(which python3) \
-          -D PYTHON3_INCLUDE_DIR=/usr/include/python3.11 \
-          -D PYTHON3_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython3.11.so \
-          -D WITH_QT=OFF \
-          -D WITH_GTK=ON \
-          -D BUILD_TESTS=OFF \
-          -D BUILD_EXAMPLES=OFF \
-          -D CUDA_ARCH_BIN=7.5 \
-          -D CUDA_ARCH_PTX= \
-          ../
-RUN make -j$(nproc) && make install && ldconfig
-
-# Clean up to reduce image size
-RUN rm -rf /tmp/opencv /tmp/opencv_contrib
+# Stage 1: Build Stage
+FROM tensorrt-opencv5-python3.11-cuda AS builder
 
 # Set working directory
 WORKDIR /workspace
+
+# Copy source files and CMakeLists.txt to the container
+COPY ./src /workspace/src
+COPY ./include /workspace/include
+COPY CMakeLists.txt /workspace
+COPY main.cu /workspace
+
+# Create a build directory and compile the project
+RUN mkdir -p build && cd build && cmake .. && make
+
+# Stage 2: Runtime Stage
+FROM tensorrt-opencv5-python3.11-cuda
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy compiled binaries from the build stage
+COPY --from=builder /workspace/build/main /workspace/main
+
+# Default entrypoint to run the executable
+ENTRYPOINT ["./main"]

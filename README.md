@@ -1,51 +1,44 @@
-## Dependency prep
+# YOLOv11 with Cuda and TensorRT
+
+## Export model from pt to trt
 ```bash
-sudo apt update
-sudo apt install -y build-essential cmake git \
-    libgtk2.0-dev pkg-config libavcodec-dev \
-    libavformat-dev libswscale-dev python3-dev \
-    python3-numpy libtbb2 libtbb-dev \
-    libjpeg-dev libpng-dev libtiff-dev
-
-git clone https://github.com/opencv/opencv.git
-git clone https://github.com/opencv/opencv_contrib.git
-cd opencv
-mkdir build && cd build
-
-cmake -D CMAKE_BUILD_TYPE=Release \
-      -D CMAKE_INSTALL_PREFIX=/usr/local \
-      -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
-      -D WITH_CUDA=ON \
-      -D ENABLE_FAST_MATH=1 \
-      -D CUDA_FAST_MATH=1 \
-      -D WITH_CUBLAS=1 ..
-
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-```
-## Build
-```bash
-rm -rf build && mkdir build && cd build
-cmake .. && make && cd ../
-```
-
-## Run
-```bash
-./build/main ./asset/bus.jpg
-```
-
-```bash
-docker run --gpus all -it --rm \
--v /home/rtae/yolo-cuda:/workspace/yolo-cuda \
-tensorrt-opencv5-python3.11-cuda bash
-```
-
-```bash
+pip install ultralytics
 yolo export model=yolo11s.pt format=onnx batch=8 half=True
 
 trtexec --onnx=yolo11s.onnx \
         --saveEngine=yolo11s.engine \
         --memPoolSize=workspace:4G \
         --fp16
+```
+
+## How to Build
+### Build base image
+```bash
+docker build -t <tensorrt-opencv5-python3.11-cuda -f Dockerfile.base .
+```
+
+### Build inference image
+```bash
+docker build -t yolov11-cuda-trt -f Dockerfile .
+```
+
+## Run
+### For workspace
+```bash
+docker run --gpus all -it --rm \
+-v ./yolo-cuda:/workspace/yolo-cuda \
+tensorrt-opencv5-python3.11-cuda bash
+```
+
+### For inference
+
+```bash
+docker run --gpus all -it --rm \
+-v ./weights:/workspace/weights \
+-v ./asset:/workspace/asset \
+yolov11-cuda-trt ./asset/bus.jpg --engine_path=weights/yolo11s.engine
+```
+
+```txt
+Usage: ./build/main <input_path> [--engine_path=PATH] [--batch_size=N] [--confidence_threshold=FLOAT]
 ```
