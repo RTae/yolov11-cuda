@@ -150,3 +150,36 @@ The pipeline processes inputs efficiently by leveraging GPU acceleration. Below 
 
 - **Postprocessing** is CPU-bound, which may bottleneck performance for large batch sizes.
 - Requires a TensorRT-compatible GPU.
+
+## Example log
+
+```txt
+Inference time for batch in ./asset/walk.mp4: 163.39 ms, 20.4238ms/frame
+[Final Detection] Class ID: 0, Confidence: 0.729492, BBox: [270, 80, 63, 428]
+[Final Detection] Class ID: 0, Confidence: 0.835938, BBox: [269, 75, 67, 437]
+[Final Detection] Class ID: 0, Confidence: 0.708984, BBox: [611, 227, 16, 76]
+[Final Detection] Class ID: 0, Confidence: 0.706543, BBox: [260, 73, 95, 438]
+[Final Detection] Class ID: 0, Confidence: 0.733398, BBox: [252, 74, 92, 436]
+[Final Detection] Class ID: 0, Confidence: 0.82959, BBox: [244, 77, 124, 433]
+[Final Detection] Class ID: 0, Confidence: 0.730469, BBox: [606, 226, 26, 78]
+Inference time for batch in ./asset/walk.mp4: 164.353 ms, 20.5441ms/frame
+[Final Detection] Class ID: 0, Confidence: 0.811523, BBox: [239, 80, 117, 430]
+[Final Detection] Class ID: 0, Confidence: 0.751953, BBox: [606, 226, 30, 78]
+[Final Detection] Class ID: 0, Confidence: 0.867676, BBox: [232, 86, 144, 424]
+[Final Detection] Class ID: 0, Confidence: 0.759766, BBox: [606, 229, 33, 75]
+[Final Detection] Class ID: 0, Confidence: 0.820312, BBox: [227, 88, 142, 422]
+[Final Detection] Class ID: 0, Confidence: 0.742676, BBox: [606, 227, 33, 77]
+[Final Detection] Class ID: 0, Confidence: 0.828613, BBox: [223, 91, 146, 420]
+[Final Detection] Class ID: 0, Confidence: 0.839844, BBox: [221, 91, 140, 419]
+[Final Detection] Class ID: 0, Confidence: 0.862793, BBox: [225, 91, 132, 419]
+[Final Detection] Class ID: 0, Confidence: 0.775391, BBox: [240, 91, 112, 398]
+Inference time for batch in ./asset/walk.mp4: 165.66 ms, 20.7076ms/frame
+[Final Detection] Class ID: 0, Confidence: 0.737305, BBox: [443, 213, 19, 100]
+[Final Detection] Class ID: 0, Confidence: 0.730469, BBox: [270, 76, 55, 438]
+[Final Detection] Class ID: 0, Confidence: 0.714355, BBox: [439, 217, 19, 96]
+[Final Detection] Class ID: 0, Confidence: 0.800781, BBox: [260, 76, 66, 435]
+[Final Detection] Class ID: 0, Confidence: 0.796875, BBox: [254, 82, 73, 432]
+[Final Detection] Class ID: 0, Confidence: 0.815918, BBox: [248, 81, 105, 431]
+[Final Detection] Class ID: 0, Confidence: 0.85498, BBox: [241, 88, 102, 423]
+[Final Detection] Class ID: 0, Confidence: 0.70166, BBox: [611, 228, 29, 77]
+```
