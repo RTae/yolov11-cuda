@@ -2,8 +2,9 @@
 
 This project provides a high-performance implementation of YOLOv11 object detection using TensorRT for inference acceleration. The pipeline processes images and videos in batches, leveraging CUDA for preprocessing and inference. Non-Maximum Suppression (NMS) and postprocessing are performed on the CPU to optimize results.
 
----
+![Walk Video Example](https://github.com/RTae/yolov11-cuda/blob/main/asset/mat_walk.gif?raw=true)
 
+![Bus Example](https://github.com/RTae/yolov11-cuda/blob/main/asset/mat_bus.jpg?raw=true)
 ## Features
 
 - **CUDA-accelerated preprocessing and inference** for faster performance.
@@ -12,8 +13,6 @@ This project provides a high-performance implementation of YOLOv11 object detect
 - **Threaded Execution** to handle multiple input streams concurrently, with each stream processed on separate CUDA streams for maximum GPU utilization.
 - **Scalable pipeline**: Process multiple files (images or videos) in parallel.
 - Outputs detections with bounding boxes, class labels, and confidence scores.
-
----
 
 ## Model Preparation
 
@@ -42,8 +41,6 @@ This project provides a high-performance implementation of YOLOv11 object detect
    - `--memPoolSize`: Allocates GPU memory for the engine.
    - `--fp16`: Enables half-precision floating-point computation for faster inference.
 
----
-
 ## Build Instructions
 
 ### 1. Build Base Docker Image
@@ -57,8 +54,6 @@ The inference Docker image includes the YOLOv11 pipeline:
 ```bash
 docker build -t yolov11-cuda-trt -f Dockerfile .
 ```
-
----
 
 ## Running the Project
 
@@ -94,8 +89,6 @@ docker run --gpus all -it --rm \
 yolov11-cuda-trt ./asset/walk1.mp4,./asset/walk2.mp4 --engine_path=weights/yolo11s.engine --batch_size=8 --confidence_threshold=0.7
 ```
 
----
-
 ## Pipeline Details
 
 ### 1. Preprocessing (CUDA)
@@ -126,8 +119,6 @@ yolov11-cuda-trt ./asset/walk1.mp4,./asset/walk2.mp4 --engine_path=weights/yolo1
 - Logs detections with class labels, confidence scores, and bounding box details.
 - Saves processed images and videos with bounding boxes drawn.
 
----
-
 ## Example Outputs
 
 1. **Image Input**:
@@ -146,8 +137,6 @@ yolov11-cuda-trt ./asset/walk1.mp4,./asset/walk2.mp4 --engine_path=weights/yolo1
      ```
    - Output: Annotated video saved as `out_walk1.mp4`.
 
----
-
 ## Performance
 
 The pipeline processes inputs efficiently by leveraging GPU acceleration. Below are approximate performance metrics:
@@ -155,8 +144,6 @@ The pipeline processes inputs efficiently by leveraging GPU acceleration. Below 
 - **Postprocessing**: Executed on the CPU for flexibility and precision.
 - **Throughput**: Supports batch sizes up to the GPU memory limit, providing high throughput for both images and videos.
 - **Multi-threading**: Achieves concurrent processing of multiple inputs, significantly improving throughput.
-
----
 
 ## Limitations
 
