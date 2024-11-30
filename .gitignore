@@ -1,7 +1,8 @@
 *.mp4
+out_*.jpg
+out_*.mp4
 build
 .vscode
 *.engine
-out_*.jpg
 core
 .DS_Store
