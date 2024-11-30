@@ -32,13 +32,15 @@ tensorrt-opencv5-python3.11-cuda bash
 
 ### For inference
 
+```txt
+Usage: ./build/main <input_path> [--engine_path=PATH] [--batch_size=N] [--confidence_threshold=FLOAT]
+Example
+./build/main ./asset/bus.jpg,./asset/bus1.jpg --engine_path=weights/yolo11s.engine
+```
+
 ```bash
 docker run --gpus all -it --rm \
 -v ./weights:/workspace/weights \
 -v ./asset:/workspace/asset \
 yolov11-cuda-trt ./asset/bus.jpg --engine_path=weights/yolo11s.engine
-```
-
-```txt
-Usage: ./build/main <input_path> [--engine_path=PATH] [--batch_size=N] [--confidence_threshold=FLOAT]
 ```
