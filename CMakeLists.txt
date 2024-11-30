@@ -29,6 +29,7 @@ include_directories(
 # Add source files
 file(GLOB SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.cpp   # All .cpp files in src/
+    ${CMAKE_SOURCE_DIR}/src/*.cu   # All .cu files in src/
     ${CMAKE_SOURCE_DIR}/main.cu    # Main CUDA file
 )
 
