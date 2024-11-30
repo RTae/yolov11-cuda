@@ -4,7 +4,8 @@ This project provides a high-performance implementation of YOLOv11 object detect
 
 ![Walk Video Example](https://github.com/RTae/yolov11-cuda/blob/main/asset/mat_walk.gif?raw=true)
 
-![Bus Example](https://github.com/RTae/yolov11-cuda/blob/main/asset/mat_bus.jpg?raw=true)
+<img src="https://github.com/RTae/yolov11-cuda/blob/main/asset/mat_bus.jpg?raw=true" alt="Bus image" width="300"/>
+
 ## Features
 
 - **CUDA-accelerated preprocessing and inference** for faster performance.
