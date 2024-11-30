@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+#include <sstream>
 
 std::unique_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string &enginePath, nvinfer1::ILogger &logger)
 {
@@ -27,4 +28,15 @@ std::unique_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string &enginePath,
     }
 
     return std::unique_ptr<nvinfer1::ICudaEngine>(runtime->deserializeCudaEngine(engineData.data(), fileSize));
+}
+
+// Function to split a string by a delimiter
+std::vector<std::string> split(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(str);
+    std::string token;
+    while (std::getline(ss, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
 }
