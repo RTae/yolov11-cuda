@@ -14,7 +14,7 @@ trtexec --onnx=yolo11s.onnx \
 ## How to Build
 ### Build base image
 ```bash
-docker build -t tensorrt-opencv5-python3.11-cuda -f Dockerfile.base .
+docker build -t gtensorrt-opencv5-python3.11-cuda -f Dockerfile.base .
 ```
 
 ### Build inference image
