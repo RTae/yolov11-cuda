@@ -4,3 +4,4 @@ build
 *.engine
 out_*.jpg
 core
+.DS_Store
