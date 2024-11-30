@@ -15,6 +15,14 @@ This project provides a high-performance implementation of YOLOv11 object detect
 - **Scalable pipeline**: Process multiple files (images or videos) in parallel.
 - Outputs detections with bounding boxes, class labels, and confidence scores.
 
+## Report
+
+| **Configuration**                   | **Inference Time (ms)** | **Preprocessing Time (ms)** | **Total Latency (ms)** | **FPS** |
+|-------------------------------------|--------------------------|-----------------------------|-------------------------|---------|
+| Baseline (CUDA Only)                | 80                      | -                           | 80                     | 12.5    |
+| TensorRT + CUDA Streams (CPU Preprocessing) | 30               | Depends on CPU (~0-10)      | 30                     | 33.3    |
+| TensorRT + CUDA Streams (CUDA Preprocessing) | 20             | Optimal                     | 20                     | 50      |
+
 ## Model Preparation
 
 ### Export the YOLOv11 Model to TensorRT Engine
