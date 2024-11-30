@@ -3,9 +3,11 @@
 #include <iostream>
 #include <vector>
 
-std::unique_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& enginePath, nvinfer1::ILogger& logger) {
+std::unique_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string &enginePath, nvinfer1::ILogger &logger)
+{
     std::ifstream engineFile(enginePath, std::ios::binary);
-    if (!engineFile) {
+    if (!engineFile)
+    {
         std::cerr << "Error loading engine file: " << enginePath << std::endl;
         return nullptr;
     }
@@ -18,7 +20,8 @@ std::unique_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& enginePath,
     engineFile.close();
 
     auto runtime = nvinfer1::createInferRuntime(logger);
-    if (!runtime) {
+    if (!runtime)
+    {
         std::cerr << "Failed to create TensorRT runtime!" << std::endl;
         return nullptr;
     }
